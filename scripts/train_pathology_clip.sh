@@ -99,6 +99,7 @@ torchrun \
     \
     --image-mean         0.707223 0.578729 0.703617 \
     --image-std          0.211883 0.230117 0.177517 \
+    --aug-cfg            "scale=(0.4, 1.0)" \
     \
     --eval-tcga-root     "${TCGA_ROOT}" \
     --eval-scorpion-root "${SCORPION_ROOT}" \

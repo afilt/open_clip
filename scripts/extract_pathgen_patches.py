@@ -2,49 +2,36 @@
 """
 Extract histology patches from TCGA whole-slide images for PathGen-1.6M.
 
-Two modes
----------
-A. Local slides (recommended when you already have the WSIs on disk)
-   --slides_dir /path/to/flat_folder
-   All WSI files (.svs / .tiff / .tif / .ndpi / .scn) must live directly
-   in this directory (flat layout — no sub-folders required).
-   Matching: file stem == file_id, then wsi_id substring match, then
-   any remaining WSI file assigned by position in the sorted file list.
-
-B. Download on-the-fly via GDC Data Transfer Tool
-   --gdc_token /path/to/token.txt
-   Downloads each WSI to a temporary directory, extracts patches, then
-   deletes the WSI (unless --keep_wsi is set).
-
-Common pipeline
----------------
+Pipeline
+--------
 1. Read PathGen-1.6M.json → group entries by file_id (one WSI per group).
-2. For each WSI: open with OpenSlide, extract 672×672 px patches at the
-   (x, y) coordinates given in the metadata (level 0, 0.5 µm/px).
+2. For each WSI: find the file in --slides_dir, open with OpenSlide, extract
+   672×672 px patches at the (x, y) coordinates from the metadata
+   (level 0, 0.5 µm/px).
 3. Save patches as PNG and append rows to a manifest CSV ready for
    ``--train-data`` in the CLIP fine-tuning script.
+
+Slide directory
+---------------
+All WSI files (.svs / .tiff / .tif / .ndpi / .scn) must live flat in
+--slides_dir (no sub-folders needed). Default: /lustre/fsmisc/dataset/TCGA_WSI
+
+Matching order for each WSI:
+  1. File stem == file_id  (e.g. <uuid>.svs)
+  2. File stem == wsi_id   (e.g. TCGA-XX-XXXX-….svs)
+  3. Either ID appears as a substring of the stem
 
 Requirements
 ------------
     pip install openslide-python tqdm
-    # GDC client only needed for mode B:
-    # https://gdc.cancer.gov/access-data/gdc-data-transfer-tool
 
 Usage
 -----
-    # Mode A — local slides in a flat folder:
     python extract_pathgen_patches.py \\
         --metadata   /Users/afiliot/Desktop/pathgen-1.6M/PathGen-1.6M.json \\
-        --slides_dir /path/to/slides \\
+        --slides_dir /lustre/fsmisc/dataset/TCGA_WSI \\
         --output_dir /path/to/output
 
-    # Mode B — download from GDC:
-    python extract_pathgen_patches.py \\
-        --metadata   /Users/afiliot/Desktop/pathgen-1.6M/PathGen-1.6M.json \\
-        --output_dir /path/to/output \\
-        --gdc_token  /path/to/gdc_token.txt
-
-    # Common options:
     python extract_pathgen_patches.py ... --max_slides 5   # test on 5 slides
     python extract_pathgen_patches.py ... --resume         # skip done slides
 
@@ -54,7 +41,6 @@ Output layout
       patches/
         <wsi_id>/
           <x>_<y>.png      ← 672×672 RGB patch
-      wsi_tmp/             ← temporary downloads (mode B only)
       pathgen_manifest.csv ← image_path, caption, wsi_id, file_id, x, y
 """
 from __future__ import annotations
@@ -63,9 +49,6 @@ import argparse
 import csv
 import json
 import logging
-import os
-import shutil
-import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -151,56 +134,6 @@ def group_by_file_id(
     for e in entries:
         groups.setdefault(e["file_id"], []).append(e)
     return groups
-
-
-# ---------------------------------------------------------------------------
-# GDC download
-# ---------------------------------------------------------------------------
-
-def download_wsi(
-    file_id: str,
-    download_dir: Path,
-    token_path: Optional[str] = None,
-) -> Optional[Path]:
-    """Download a single WSI using gdc-client.
-
-    gdc-client creates ``<download_dir>/<file_id>/<filename>.svs``.
-    Returns the path to the WSI file, or None on failure.
-    """
-    cmd = ["gdc-client", "download", "-d", str(download_dir), file_id]
-    if token_path:
-        cmd += ["-t", token_path]
-
-    try:
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=7200  # 2 h max
-        )
-    except subprocess.TimeoutExpired:
-        log.error(f"Timeout downloading {file_id}")
-        return None
-    except FileNotFoundError:
-        log.error(
-            "gdc-client not found. Install it from "
-            "https://gdc.cancer.gov/access-data/gdc-data-transfer-tool"
-        )
-        return None
-
-    if result.returncode != 0:
-        log.error(f"gdc-client failed for {file_id}:\n{result.stderr}")
-        return None
-
-    wsi_dir = download_dir / file_id
-    candidates = (
-        list(wsi_dir.glob("*.svs"))
-        + list(wsi_dir.glob("*.tiff"))
-        + list(wsi_dir.glob("*.tif"))
-        + list(wsi_dir.glob("*.ndpi"))
-        + list(wsi_dir.glob("*.scn"))
-    )
-    if not candidates:
-        log.error(f"No WSI file found in {wsi_dir}")
-        return None
-    return candidates[0]
 
 
 # ---------------------------------------------------------------------------
@@ -313,46 +246,27 @@ def process_slide(
     file_id: str,
     entries: List[Dict[str, Any]],
     patches_dir: Path,
-    wsi_tmp_dir: Path,
     manifest_path: Path,
-    token_path: Optional[str],
-    keep_wsi: bool,
+    slide_index: dict,
     patch_size: int,
-    slide_index: Optional[dict] = None,
 ) -> int:
-    """Locate / download one WSI, extract patches, update the manifest.
-
-    Mode A (local): ``slide_index`` is provided → no download.
-    Mode B (GDC):   ``slide_index`` is None → download via gdc-client.
+    """Locate one WSI in the local slide index, extract patches, update manifest.
 
     Returns the number of successfully extracted patches.
     """
     wsi_id = entries[0]["wsi_id"]
     log.info(f"▶  {wsi_id}  ({len(entries)} patches, file_id={file_id})")
 
-    downloaded = False
-    if slide_index is not None:
-        # Mode A: use local file
-        wsi_path = find_local_slide(file_id, wsi_id, slide_index)
-        if wsi_path is None:
-            log.warning(f"Skipping {wsi_id}: not found in slides_dir")
-            return 0
-    else:
-        # Mode B: download from GDC
-        wsi_path = download_wsi(file_id, wsi_tmp_dir, token_path)
-        if wsi_path is None:
-            log.warning(f"Skipping {wsi_id}: download failed")
-            return 0
-        downloaded = True
+    wsi_path = find_local_slide(file_id, wsi_id, slide_index)
+    if wsi_path is None:
+        log.warning(f"Skipping {wsi_id}: not found in slides_dir")
+        return 0
 
     rows = extract_patches_from_slide(wsi_path, entries, patches_dir, patch_size)
 
     if rows:
         append_manifest(manifest_path, rows)
         log.info(f"   ✓  {len(rows)}/{len(entries)} patches saved for {wsi_id}")
-
-    if downloaded and not keep_wsi:
-        shutil.rmtree(wsi_tmp_dir / file_id, ignore_errors=True)
 
     return len(rows)
 
@@ -377,33 +291,15 @@ def parse_args() -> argparse.Namespace:
         help="Root output directory (patches/ and pathgen_manifest.csv go here)",
     )
 
-    # --- Mode A: local slides ---
     p.add_argument(
         "--slides_dir",
         default=DEFAULT_SLIDES_DIR,
         help=(
             "Flat directory containing all WSI files (.svs/.tiff/…). "
-            "When set (and the directory exists), no download is performed. "
             f"Default: {DEFAULT_SLIDES_DIR}"
         ),
     )
 
-    # --- Mode B: download from GDC ---
-    p.add_argument(
-        "--gdc_token",
-        default=None,
-        help=(
-            "Path to GDC authentication token (.txt). "
-            "Used only when --slides_dir does not exist or is not set."
-        ),
-    )
-    p.add_argument(
-        "--keep_wsi",
-        action="store_true",
-        help="Do NOT delete downloaded WSI files after extraction (mode B only)",
-    )
-
-    # --- Common ---
     p.add_argument(
         "--max_slides",
         type=int,
@@ -434,25 +330,15 @@ def main() -> None:
 
     output_dir    = Path(args.output_dir)
     patches_dir   = output_dir / "patches"
-    wsi_tmp_dir   = output_dir / "wsi_tmp"
     manifest_path = output_dir / "pathgen_manifest.csv"
 
     patches_dir.mkdir(parents=True, exist_ok=True)
-    wsi_tmp_dir.mkdir(parents=True, exist_ok=True)
 
-    # Decide mode: local slides vs. GDC download
-    slides_dir = Path(args.slides_dir) if args.slides_dir else None
-    if slides_dir is not None and slides_dir.is_dir():
-        log.info(f"Mode A: using local slides from {slides_dir}")
-        slide_index = build_slide_index(str(slides_dir))
-    else:
-        if slides_dir is not None:
-            log.warning(
-                f"--slides_dir '{slides_dir}' does not exist; "
-                "falling back to GDC download (mode B)."
-            )
-        log.info("Mode B: downloading slides from GDC")
-        slide_index = None
+    slides_dir = Path(args.slides_dir)
+    if not slides_dir.is_dir():
+        raise SystemExit(f"--slides_dir '{slides_dir}' does not exist or is not a directory.")
+    log.info(f"Using local slides from {slides_dir}")
+    slide_index = build_slide_index(str(slides_dir))
 
     entries = load_metadata(args.metadata)
     grouped = group_by_file_id(entries)
@@ -484,12 +370,9 @@ def main() -> None:
             file_id=file_id,
             entries=grouped[file_id],
             patches_dir=patches_dir,
-            wsi_tmp_dir=wsi_tmp_dir,
             manifest_path=manifest_path,
-            token_path=args.gdc_token,
-            keep_wsi=args.keep_wsi,
-            patch_size=args.patch_size,
             slide_index=slide_index,
+            patch_size=args.patch_size,
         )
         total_patches += n
 
