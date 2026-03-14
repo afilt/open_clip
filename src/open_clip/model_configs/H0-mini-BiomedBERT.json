@@ -1,0 +1,21 @@
+{
+    "embed_dim": 512,
+    "vision_cfg": {
+        "image_size": 224,
+        "timm_model_name": "hf_hub:bioptimus/H0-mini",
+        "timm_model_pretrained": true,
+        "timm_pool": "",
+        "timm_proj": "linear",
+        "timm_proj_bias": false,
+        "timm_drop": 0.0
+    },
+    "text_cfg": {
+        "hf_model_name": "microsoft/BiomedNLP-BiomedBERT-large-uncased-abstract-fulltext",
+        "hf_tokenizer_name": "microsoft/BiomedNLP-BiomedBERT-large-uncased-abstract-fulltext",
+        "hf_model_pretrained": true,
+        "hf_proj_type": "linear",
+        "hf_pooler_type": "mean_pooler",
+        "context_length": 256
+    },
+    "custom_text": true
+}

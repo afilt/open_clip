@@ -139,19 +139,45 @@ The indices of images in this subset are in [OpenAI's CLIP repository](https://g
 
 ### Install
 
-We advise you first create a virtual environment with:
+#### Recommended: uv (fast)
 
+[uv](https://docs.astral.sh/uv/) resolves and installs dependencies significantly faster than pip.
+
+```bash
+# Install uv (once)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Create a virtual environment and install open_clip with training extras
+uv venv .env
+source .env/bin/activate
+uv pip install 'open_clip_torch[training]'
 ```
+
+For pathology fine-tuning (LoRA on H0-mini + BiomedBERT) also install:
+
+```bash
+uv pip install peft timm transformers scikit-learn pandas
+```
+
+#### Alternative: pip + venv
+
+```bash
 python3 -m venv .env
 source .env/bin/activate
 pip install -U pip
+pip install 'open_clip_torch[training]'
 ```
 
-You can then install openclip for training with `pip install 'open_clip_torch[training]'`.
+#### Development (editable install)
 
-#### Development
+If you want to make changes to contribute code, you can clone openclip then run `make install` in openclip folder (after creating a virtualenv).
 
-If you want to make changes to contribute code, you can clone openclip then run `make install` in openclip folder (after creating a virtualenv)
+With uv:
+
+```bash
+uv venv .env && source .env/bin/activate
+uv pip install -e '.[training]'
+```
 
 Install pip PyTorch as per https://pytorch.org/get-started/locally/
 

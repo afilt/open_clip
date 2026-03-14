@@ -480,6 +480,79 @@ def parse_args(args):
         help='A string to specify a specific distributed loss implementation.'
     )
 
+    # LoRA fine-tuning arguments
+    parser.add_argument(
+        "--apply-lora",
+        default=False,
+        action="store_true",
+        help="Apply LoRA adapters to vision trunk and text transformer. "
+             "Freezes all base weights; only LoRA params + projection heads are trained.",
+    )
+    parser.add_argument(
+        "--lora-r",
+        type=int,
+        default=8,
+        help="LoRA rank (number of low-rank matrices). Lower = fewer trainable params.",
+    )
+    parser.add_argument(
+        "--lora-alpha",
+        type=int,
+        default=16,
+        help="LoRA scaling factor (lora_alpha / lora_r controls effective learning rate of adapters).",
+    )
+    parser.add_argument(
+        "--lora-dropout",
+        type=float,
+        default=0.05,
+        help="Dropout probability inside LoRA adapters.",
+    )
+    parser.add_argument(
+        "--lora-vision-target-modules",
+        nargs="+",
+        default=["qkv"],
+        help="timm module names to adapt with LoRA in the vision backbone (e.g. 'qkv', 'proj').",
+    )
+    parser.add_argument(
+        "--lora-text-target-modules",
+        nargs="+",
+        default=["query", "key", "value"],
+        help="HuggingFace module names to adapt with LoRA in the text encoder.",
+    )
+
+    # Pathology evaluation (TCGA-UT catastrophic-forgetting + SCORPION robustness)
+    parser.add_argument(
+        "--eval-tcga-root",
+        type=str,
+        default=None,
+        help="Root directory of TCGA-UT data (one sub-folder per slide). "
+             "When set, a linear probe is run after every --eval-interval epochs.",
+    )
+    parser.add_argument(
+        "--eval-scorpion-root",
+        type=str,
+        default=None,
+        help="Root directory of SCORPION data (slide_*/sample_*/SCANNER.jpg). "
+             "When set, retrieval metrics are computed every --eval-interval epochs.",
+    )
+    parser.add_argument(
+        "--eval-interval",
+        type=int,
+        default=1,
+        help="Run pathology evals every N completed epochs (0 = disable).",
+    )
+    parser.add_argument(
+        "--eval-batch-size",
+        type=int,
+        default=32,
+        help="Batch size for tile feature extraction during pathology eval.",
+    )
+    parser.add_argument(
+        "--eval-max-tiles",
+        type=int,
+        default=50,
+        help="Max tiles per slide for TCGA-UT linear probe (0 = all tiles).",
+    )
+
     args = parser.parse_args(args)
 
     if 'timm' not in args.opt:

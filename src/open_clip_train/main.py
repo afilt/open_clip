@@ -281,6 +281,15 @@ def main(args):
     if args.grad_checkpointing:
         model.set_grad_checkpointing()
 
+    if args.apply_lora:
+        from open_clip.lora_utils import apply_lora_to_clip
+        model = apply_lora_to_clip(model, args)
+        if is_master(args):
+            logging.info("LoRA adapters applied.")
+            trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+            total = sum(p.numel() for p in model.parameters())
+            logging.info(f"  Trainable params: {trainable:,} / {total:,} ({100*trainable/total:.2f}%)")
+
     if is_master(args):
         logging.info("Model:")
         logging.info(f"{str(model)}")
@@ -503,6 +512,15 @@ def main(args):
                     hvd.join()
                 else:
                     torch.distributed.barrier()
+
+        # Pathology-specific evals: TCGA-UT (forgetting) + SCORPION (robustness)
+        _eval_tcga = getattr(args, 'eval_tcga_root', None)
+        _eval_scorp = getattr(args, 'eval_scorpion_root', None)
+        _eval_interval = getattr(args, 'eval_interval', 1)
+        if is_master(args) and (_eval_tcga or _eval_scorp) and _eval_interval > 0:
+            if completed_epoch % _eval_interval == 0 or completed_epoch == args.epochs:
+                from open_clip_train.pathology_eval import run_pathology_evals
+                run_pathology_evals(original_model, args, completed_epoch, writer)
 
         # Saving checkpoints.
         if args.save_logs:
