@@ -150,7 +150,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 # Create a virtual environment and install open_clip with training extras
 uv venv .env
 source .env/bin/activate
-uv pip install 'open_clip_torch[training]'
+uv sync --extra training
 ```
 
 For pathology fine-tuning (LoRA on H0-mini + BiomedBERT) also install:
