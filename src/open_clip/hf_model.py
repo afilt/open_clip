@@ -122,10 +122,10 @@ class HFTextEncoder(nn.Module):
                 AutoModel.from_config, self.config)
             # TODO: do all model configs have this attribute? PretrainedConfig does so yes??
             if hasattr(self.config, "is_encoder_decoder") and self.config.is_encoder_decoder:
-                self.transformer = create_func(model_args)
+                self.transformer = create_func(model_args, use_safetensors=True)
                 self.transformer = self.transformer.encoder
             else:
-                self.transformer = create_func(model_args, add_pooling_layer=uses_transformer_pooler)
+                self.transformer = create_func(model_args, add_pooling_layer=uses_transformer_pooler, use_safetensors=True)
         else:
             self.config = config
             self.transformer = AutoModel.from_config(config)

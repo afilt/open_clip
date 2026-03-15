@@ -26,6 +26,17 @@ export PYTHONPATH="${SRC_DIR}:${PYTHONPATH:-}"
 
 EXTRA_ARGS=("$@")
 
+# Pathology eval roots — override via env vars or CLI if data lives elsewhere
+SCORPION_ROOT="${SCORPION_ROOT:-/Users/afiliot/Desktop/scorpion}"
+TCGA_UT_ROOT="${TCGA_UT_ROOT:-/Users/afiliot/Desktop/tcga_ut/data}"
+
+# Build optional eval flags (skip silently if the data dirs don't exist)
+EVAL_ARGS=()
+[[ -d "${SCORPION_ROOT}" ]] && EVAL_ARGS+=(--eval-scorpion-root "${SCORPION_ROOT}")
+[[ -d "${TCGA_UT_ROOT}"  ]] && EVAL_ARGS+=(--eval-tcga-root     "${TCGA_UT_ROOT}")
+# Run eval at epoch 0 (pre-training baseline) and then every epoch
+[[ ${#EVAL_ARGS[@]} -gt 0 ]] && EVAL_ARGS+=(--eval-interval 1)
+
 python -m open_clip_train.main \
     --model              H0-mini-BiomedBERT \
     --dataset-type       synthetic \
@@ -52,4 +63,5 @@ python -m open_clip_train.main \
     --image-mean         0.707223 0.578729 0.703617 \
     --image-std          0.211883 0.230117 0.177517 \
     \
+    "${EVAL_ARGS[@]+"${EVAL_ARGS[@]}"}" \
     "${EXTRA_ARGS[@]+${EXTRA_ARGS[@]}}"

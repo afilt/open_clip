@@ -196,7 +196,7 @@ class TextEncoderWithLoRA(nn.Module):
     ----------
     model_name_or_path : str
         HuggingFace model identifier or local path.
-        Default: ``"microsoft/BiomedNLP-BiomedBERT-large-uncased-abstract-fulltext"``.
+        Default: ``"microsoft/BiomedNLP-BiomedBERT-large-uncased-abstract"``.
     lora_r : int
         LoRA rank.
     lora_alpha : int
@@ -213,7 +213,7 @@ class TextEncoderWithLoRA(nn.Module):
     def __init__(
         self,
         model_name_or_path: str = (
-            "microsoft/BiomedNLP-BiomedBERT-large-uncased-abstract-fulltext"
+            "microsoft/BiomedNLP-BiomedBERT-large-uncased-abstract"
         ),
         lora_r: int = 8,
         lora_alpha: int = 16,

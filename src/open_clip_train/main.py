@@ -497,6 +497,14 @@ def main(args):
 
     loss = create_loss(args)
 
+    # Pre-training baseline eval (epoch 0) — runs before any weight updates.
+    _eval_tcga = getattr(args, 'eval_tcga_root', None)
+    _eval_scorp = getattr(args, 'eval_scorpion_root', None)
+    if is_master(args) and (_eval_tcga or _eval_scorp) and start_epoch == 0:
+        from open_clip_train.pathology_eval import run_pathology_evals
+        logging.info("Running pre-training baseline pathology evals (epoch 0) …")
+        run_pathology_evals(original_model, args, completed_epoch=0, tb_writer=writer)
+
     for epoch in range(start_epoch, args.epochs):
         if is_master(args):
             logging.info(f'Start epoch {epoch}')

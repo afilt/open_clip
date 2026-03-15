@@ -52,6 +52,8 @@ training = [
     'transformers[sentencepiece]',
     'timm>=1.0.17',
     'fsspec',
+    'peft',
+    'accelerate',
 ]
 test = [
     'pytest-split',
@@ -72,6 +74,14 @@ path = "src/open_clip/version.py"
 excludes = ["./**/.git", "./**/logs/*"]
 package-dir = "src"
 includes = ["src/open_clip", "src/open_clip_train"]
+
+[tool.uv]
+required-environments = [
+    "sys_platform == 'darwin' and platform_machine == 'x86_64'",
+]
+constraint-dependencies = [
+    "numpy<2; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+]
 
 [tool.pytest.ini_options]
 testpaths = ['tests']
